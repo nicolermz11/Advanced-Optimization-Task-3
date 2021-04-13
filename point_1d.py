@@ -20,6 +20,7 @@ demand = {0: 9, 1: 6, 2: 20, 3: 30, 4: 17, 5: 19, 6: 25, 7: 12, 8: 8, 9: 20, 10:
 
 maxWidth = 100  # Tamaño del rollo maestro.
 totWidths = len(width)  # Cantidad de longitudes demandadas.
+N = 120  # Cantidad de rollos de longitud maxWidth, L, disponibles.
 
 # Se genera la base, B, de patrones iniciales.
 patterns_init = {i: math.floor(maxWidth / width[i]) for i in width}
@@ -43,10 +44,13 @@ x = []
 for j in patterns_init.keys():
     x.append(modelMP.addVar(vtype=GRB.CONTINUOUS, obj=waste[j], name="x[%d]" % j))
 
-# Se añaden las restricciones que garantizan que se cumpla la demanda.
-demCtr = []
+# Se crea una lista llamada mCrt que contiene las restricciones, m, que garantizan que se cumpla la demanda, y la
+# restricción que garantiza que los rollos cortados no excedan el total disponible N.
+mCrt = []
 for i in width:
-    demCtr.append(modelMP.addConstr(patterns_init[i] * x[i] >= demand[i], "Demand[%d]" % width[i]))
+    mCrt.append(modelMP.addConstr(patterns_init[i] * x[i] >= demand[i], "Demand[%d]" % width[i]))
+
+mCrt.append(modelMP.addConstr(quicksum(x[i] for i in width) <= N, "Available rolls"))
 
 # Se añade función objetivo donde se debe minimizar el desperdicio.
 modelMP.modelSense = GRB.MINIMIZE
@@ -81,7 +85,7 @@ while notOptimal:
     duals = modelMP.getAttr("Pi", modelMP.getConstrs())
 
     # Se añade función objetivo y se optimiza.
-    modelAP.setObjective(d - sum(duals[i] * a[i] for i in width), GRB.MINIMIZE)
+    modelAP.setObjective(d - sum(duals[i] * a[i] for i in width) - duals[-1], GRB.MINIMIZE)
     modelAP.optimize()
 
     modelAP.write("AP_Cutting_Stock_%d.lp" % nPatterns)
@@ -96,7 +100,7 @@ while notOptimal:
     # Se añade nueva columna al problema maestro MP.
     else:
         nPatterns += 1
-        newCol = Column(modelAP.getAttr("X")[:-1], demCtr)
+        newCol = Column(modelAP.getAttr("X")[:-1] + [1], mCrt)
         modelMP.addVar(vtype=GRB.CONTINUOUS, lb=0, obj=d.x, column=newCol, name="x[%d]" % nPatterns)
 
     # Se actualiza el problema maestro.
